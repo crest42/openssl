@@ -1841,6 +1841,7 @@ EXT_RETURN tls_construct_stoc_key_share(SSL *s, WPACKET *pkt,
         goto oqs_cleanup;
       }
       /* compute the servers's shared secret and message (encoded in encoded_point) */
+      double begin = clock();
       if ((oqs_encodedPoint = malloc(oqs_kem->length_ciphertext)) == NULL ||
           (oqs_shared_secret = malloc(oqs_kem->length_shared_secret)) == NULL ||
           OQS_KEM_encaps(oqs_kem, oqs_encodedPoint, oqs_shared_secret, client_msg) != OQS_SUCCESS) {
@@ -1849,6 +1850,8 @@ EXT_RETURN tls_construct_stoc_key_share(SSL *s, WPACKET *pkt,
         has_error = 1;
         goto oqs_cleanup;
       }
+      double end = ((double)(clock() - begin)) / CLOCKS_PER_SEC;
+      fprintf(stderr, "Dec (%s): %f\n", oqs_alg_name, end);
       oqs_encoded_pt_len = oqs_kem->length_ciphertext;
       oqs_shared_secret_len = oqs_kem->length_shared_secret;
 

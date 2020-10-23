@@ -623,14 +623,29 @@ static int add_key_share(SSL *s, WPACKET *pkt, unsigned int curve_id)
           has_error = 1;
           goto oqs_cleanup;
         }
+	bool fresh = false;
+	clock_t begin = clock();
         /* compute the client's key and first message (encoded in encoded_point) */
-        if ((oqs_encoded_point = malloc(s->s3->tmp.oqs_kem->length_public_key)) == NULL ||
-            (s->s3->tmp.oqs_kem_client = malloc(s->s3->tmp.oqs_kem->length_secret_key)) == NULL ||
-            OQS_KEM_keypair(s->s3->tmp.oqs_kem, oqs_encoded_point, s->s3->tmp.oqs_kem_client) != OQS_SUCCESS) {
-          SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_ADD_KEY_SHARE, ERR_R_INTERNAL_ERROR);
-          has_error = 1;
-          goto oqs_cleanup;
-        }
+	if (fresh) {
+		if ((oqs_encoded_point = malloc(s->s3->tmp.oqs_kem->length_public_key)) == NULL ||
+		    (s->s3->tmp.oqs_kem_client = malloc(s->s3->tmp.oqs_kem->length_secret_key)) == NULL ||
+		    OQS_KEM_keypair(s->s3->tmp.oqs_kem, oqs_encoded_point, s->s3->tmp.oqs_kem_client) != OQS_SUCCESS) {
+		  SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_ADD_KEY_SHARE, ERR_R_INTERNAL_ERROR);
+		  has_error = 1;
+		  goto oqs_cleanup;
+		}
+	} else {
+		if ((oqs_encoded_point = malloc(s->s3->tmp.oqs_kem->length_public_key)) == NULL ||
+		    (s->s3->tmp.oqs_kem_client = malloc(s->s3->tmp.oqs_kem->length_secret_key)) == NULL ||
+		    OQS_KEM_keypair_fresh(s->s3->tmp.oqs_kem, oqs_encoded_point, s->s3->tmp.oqs_kem_client) != OQS_SUCCESS) {
+		  SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_ADD_KEY_SHARE, ERR_R_INTERNAL_ERROR);
+		  has_error = 1;
+		  goto oqs_cleanup;
+		}
+
+	}
+	double end = ((double)(clock() - begin)) / CLOCKS_PER_SEC;
+	fprintf(stderr, "Key gen (%s): %f\n", oqs_alg_name, end);
         oqs_encodedlen = s->s3->tmp.oqs_kem->length_public_key;
 
       oqs_cleanup:
@@ -1979,12 +1994,17 @@ int tls_parse_stoc_key_share(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
           goto oqs_cleanup;
         }
         /* compute the shared secret */
+	clock_t begin = clock();
         if ((oqs_shared_secret = malloc(s->s3->tmp.oqs_kem->length_shared_secret)) == NULL ||
             OQS_KEM_decaps(s->s3->tmp.oqs_kem, oqs_shared_secret, oqs_encoded_pt, s->s3->tmp.oqs_kem_client) != OQS_SUCCESS) {
           SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS_PARSE_STOC_KEY_SHARE, ERR_R_INTERNAL_ERROR);
           has_error = 1;
           goto oqs_cleanup;
         }
+        int oqs_nid = OQS_KEM_NID(group_id);
+        const char* oqs_alg_name = OQS_ALG_NAME(oqs_nid);
+	double end = ((double)(clock() - begin)) / CLOCKS_PER_SEC;
+	fprintf(stderr, "Dec (%s): %f\n", oqs_alg_name, end);
         oqs_shared_secret_len = s->s3->tmp.oqs_kem->length_shared_secret;
         /* We save the group_id so it can be printed out later in s_client's output. */
         s->s3->tmp.oqs_kem_curve_id = group_id;
